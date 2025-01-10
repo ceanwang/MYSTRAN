@@ -1,237 +1,100 @@
-# CMakeLists.txt for compiling MYSTRAN with gfortran in a GNU environment
-# based on an older CMakeLists.txt by ceanwang@gmail.com
-# made to work again by Bruno Borges Paschoalinoto (2020)
+# mystran
+# compile with gfortran under win 10@64
+# 20250110
+# by ceanwang@gmail.com
 
-# set up basic project info
-cmake_minimum_required(VERSION 3.18)
-include(CheckFunctionExists)
-
+cmake_minimum_required (VERSION 3.0)
+project (bjMystran)
 enable_language(Fortran)
-project(Mystran)
 
-# basic compiler and output options
-set(CMAKE_SOURCE_DIR "${PROJECT_SOURCE_DIR}/Source")
-set(PROJECT_BINARY_DIR "${PROJECT_SOURCE_DIR}/Binaries")
-set(CMAKE_FLAGS "-c -fbacktrace")
-# set(CMAKE_BUILD_TYPE Debug)
+option(BUILD_WITH_SUPERLU "Set ON if you build Mystran with SuperLU" ON)
+option(BUILD_WITH_LAPACK3 "Set ON if you build Mystran with Lapack" OFF)
 
-# set some dirs
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
-set(CMAKE_Fortran_MODULE_DIRECTORY "${PROJECT_BINARY_DIR}/mod")
-include_directories("${CMAKE_SOURCE_DIR}/INCLUDE")
+set(EXECUTABLE_OUTPUT_PATH "bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "lib")
+set(CMAKE_Fortran_MODULE_DIRECTORY "mod")
 
-# uncomment this to debug
-# set(CMAKE_VERBOSE_MAKEFILE true)
+link_directories("lib")
 
-# suppress cmake warnings for superlu
-if(NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
-  set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "No dev warnings")
-endif()
+#set (CMAKE_Fortran_FLAGS "-fcheck=all")
 
-# recommend the appropriate make command
-if(WIN32)
-  set(RECOMMENDED_MAKE "mingw32-make")
-else()
-  set(RECOMMENDED_MAKE "make")
-endif()
+include_directories("Source/INCLUDE" "superlu/SRC" "superlu/CBLAS" "lapack-3.11.0/LAPACKE/include")
 
-# submodules (i.e. SuperLU)
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
-  option(GIT_SUBMODULE "Check submodules during build" ON)
-  if(GIT_SUBMODULE)
-    message(STATUS "Updating submodules")
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive --force
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      RESULT_VARIABLE GIT_SUBMOD_RESULT
-    )
-    if(NOT GIT_SUBMOD_RESULT EQUAL "0")
-      message(
-        FATAL_ERROR
-        "git submodule update --init --recursive --force failed"
-      )
-    endif()
-  endif()
-endif()
+if (BUILD_WITH_LAPACK3)
+	#file(GLOB_RECURSE BLAS_FILES "lapack-3.11.0/BLAS/SRC/*.f*")
+	#add_library(bjBLAS ${BLAS_FILES})
+    add_subdirectory(lapack-3.11.0)
+endif (BUILD_WITH_LAPACK3)
 
-# check for SuperLU
-set(SUPERLU_DIR "${PROJECT_SOURCE_DIR}/superlu")
-include_directories("${SUPERLU_DIR}/SRC")
-if(NOT EXISTS "${SUPERLU_DIR}/CMakeLists.txt")
-  message(
-    FATAL_ERROR
-    "The submodules were not downloaded. You have to do it manually!"
-  )
-endif()
+if (BUILD_WITH_SUPERLU)
+	file(GLOB_RECURSE CBLAS_FILES "superlu/CBLAS/*.c")
+	add_library(bjCBLAS ${CBLAS_FILES})
 
+	# get all *.c files recursively
+	file(GLOB_RECURSE c_FILES "superlu/SRC/*.c")
+	add_library(bjSuperLU ${c_FILES} "superlu/FORTRAN/c_fortran_dgssv.c")
+	target_link_libraries (bjSuperLU bjCBLAS)
+endif (BUILD_WITH_SUPERLU)
 
-# f2c stuff
-set(F2C_DIR "${PROJECT_SOURCE_DIR}/f2c")
-set(F2C_INCLUDE_DIR "${F2C_DIR}/include")
-set(F2C_FN "${F2C_DIR}/libf2c.zip")
-set(F2C_URL "https://www.netlib.org/f2c/libf2c.zip")
+# get all *.f90 and *f files recursively
+file(GLOB_RECURSE BLAS_FILES "Source/BLAS/*.f")
+add_library(bjBLAS ${BLAS_FILES})
 
-# download f2c
-if(NOT EXISTS ${F2C_DIR})
-  message(STATUS "Downloading libf2c source from ${F2C_URL}...")
-  make_directory("${F2C_DIR}")
-  file(DOWNLOAD ${F2C_URL} ${F2C_FN} TIMEOUT 60 STATUS DOWNLOAD_STATUS)
-  # Check if download was successful.
-  list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
-  list(GET DOWNLOAD_STATUS 1 ERROR_MESSAGE)
-  if(${STATUS_CODE} EQUAL 0)
-    message(STATUS "Done downloading libf2c.")
-  else()
-    # Exit CMake if the download failed, printing the error message.
-    file(REMOVE_RECURSE ${F2C_DIR})
-    message(FATAL_ERROR "Error downloading libf2c: ${ERROR_MESSAGE}")
-  endif()
-endif()
+file(GLOB_RECURSE Modules_ARPACK_FILES "Source/Modules/ARPACK/*.f")
+file(GLOB_RECURSE Modules_BANDIT_FILES "Source/Modules/BANDIT/*.f*")
+file(GLOB_RECURSE Modules_LAPACK_FILES "Source/Modules/LAPACK/*.f")
+file(GLOB_RECURSE Modules_FILES "Source/Modules/*.f90")
+file(GLOB_RECURSE Interfaces_FILES "Source/Interfaces/*.f90")
+file(GLOB_RECURSE USE_IFs_FILES "Source/USE_IFs/*.f90")
+file(GLOB_RECURSE UTIL_FILES "Source/UTIL/*.f90")
+add_library(bjMOD ${USE_IFs_FILES} ${Modules_BANDIT_FILES} ${Interfaces_FILES} ${Modules_FILES} ${Modules_LAPACK_FILES} ${Modules_ARPACK_FILES} ${UTIL_FILES})
+target_link_libraries (bjMOD bjBLAS)
 
-# extract libf2c source
-file(ARCHIVE_EXTRACT INPUT ${F2C_FN} DESTINATION ${F2C_DIR})
+file(GLOB_RECURSE ARPACK_FILES "Source/ARPACK/*.f90")
+add_library(bjARPACK ${ARPACK_FILES})
+target_link_libraries (bjARPACK bjMOD)
 
-# prepare libf2c header files
-file(GLOB_RECURSE F2C_PREHEADERS "${F2C_DIR}/*.h0")
-foreach(H0 ${F2C_PREHEADERS})
-  string(REGEX REPLACE "[.]h0$" ".h" H0_R ${H0})
-  file(RENAME "${H0}" "${H0_R}")
-  file(COPY "${H0_R}" DESTINATION "${F2C_INCLUDE_DIR}")
-endforeach()
+file(GLOB_RECURSE QUAD4REV1_FILES "Source/QUAD4REV1/*.f*")
+file(GLOB_RECURSE EMG_FILES "Source/EMG/*.f90")
+add_library(bjEMG ${QUAD4REV1_FILES} ${EMG_FILES})
+if (BUILD_WITH_LAPACK3)
+    target_link_libraries (bjEMG blas bjMOD)
+else (BUILD_WITH_LAPACK3)
+    target_link_libraries (bjEMG bjMOD)
+endif (BUILD_WITH_LAPACK3)
 
-# get a load of this: f2c generates its own "arith.h" on the fly
-# so we gotta compile arithchk and run it
-set(F2C_ARITHCHK_SRC "${F2C_DIR}/arithchk.c")
-set(F2C_ARITHCHK_BIN "${F2C_DIR}/arithchk")
+file(GLOB_RECURSE LK1_FILES "Source/LK1/*.f90")
+add_library(bjLK1 ${LK1_FILES})
+target_link_libraries (bjLK1 bjMOD)
 
-if (WIN32)
-  set(F2C_ARITHCHK_BIN "${F2C_ARITHCHK_BIN}.exe")
-endif()
+file(GLOB_RECURSE LK2_FILES "Source/LK2/*.f90")
+add_library(bjLK2 ${LK2_FILES})
+target_link_libraries (bjLK2 bjMOD)
 
-set(F2C_ARITH_H "${F2C_INCLUDE_DIR}/arith.h")
-set_source_files_properties(
-  ${F2C_ARITHCHK_SRC} PROPERTIES COMPILE_FLAGS "-DNO_LONG_LONG -DNO_FPINIT"
-)
-add_executable(arithchk ${F2C_ARITHCHK_SRC})
-target_link_libraries(arithchk m)
-set_target_properties(
-  arithchk PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${F2C_DIR}
-)
-add_custom_command(
-  OUTPUT ${F2C_ARITH_H}
-  COMMAND ${F2C_ARITHCHK_BIN} > ${F2C_ARITH_H}
-  DEPENDS ${F2C_ARITHCHK_BIN}
-)
+file(GLOB_RECURSE LK3_FILES "Source/LK3/*.f90")
+add_library(bjLK3 ${LK3_FILES})
+target_link_libraries (bjLK3 bjMOD)
 
-# add libf2c to the compilation procedures
-include_directories(${F2C_INCLUDE_DIR})
-file(GLOB_RECURSE F2C_CFILES "${F2C_DIR}/*.c")
-add_definitions(-DINTEGER_STAR_8)
-add_library(f2c ${F2C_CFILES} ${F2C_ARITH_H})
+file(GLOB_RECURSE LK4_FILES "Source/LK4/*.f90")
+add_library(bjLK4 ${LK4_FILES})
+target_link_libraries (bjLK4 bjMOD)
 
-# add some extra win32 flags for libf2c
-if (WIN32)
-  add_definitions(-DUSE_CLOCK -DMSDOS)
-endif()
+file(GLOB_RECURSE LK5_FILES "Source/LK5/*.f90")
+add_library(bjLK5 ${LK5_FILES})
+target_link_libraries (bjLK5 bjMOD)
 
+file(GLOB_RECURSE LK6_FILES "Source/LK6/*.f90")
+add_library(bjLK6 ${LK6_FILES})
+target_link_libraries (bjLK6 bjMOD)
 
-# set some extra vars for MSYS builds to make the binary portable
-if (WIN32)
-  set(CMAKE_EXE_LINKER_FLAGS "-static")
-endif()
+file(GLOB_RECURSE LK9_FILES "Source/LK9/*.f90")
+add_library(bjLK9 ${LK9_FILES})
+target_link_libraries (bjLK9 bjMOD)
 
-# build the SuperLU (and CBLAS if needed) static libs!
-add_subdirectory(${SUPERLU_DIR})
-
-# collect modules and interfaces into a module called MODULES
-# the overuse of the word MODULE is brain-twisting, but bear with me
-set(Modules_DIR "${CMAKE_SOURCE_DIR}/Modules")
-file(GLOB_RECURSE Modules_ARPACK_FILES "${Modules_DIR}/ARPACK/*.f*")
-file(GLOB_RECURSE Modules_LAPACK_FILES "${Modules_DIR}/LAPACK/*.f*")
-file(GLOB_RECURSE Modules_BANDIT_FILES "${Modules_DIR}/BANDIT/*.f*")
-file(GLOB_RECURSE Modules_FILES "${Modules_DIR}/*.f*")
-file(GLOB_RECURSE Interfaces_FILES "${CMAKE_SOURCE_DIR}/Interfaces/*.f*")
-file(GLOB_RECURSE USE_IFs_FILES "${CMAKE_SOURCE_DIR}/USE_IFs/*.f*")
-# MODULES_ALL_FILES shall contain all the sources for the base modules lib
-set(
-  MODULES_ALL_FILES ${USE_IFs_FILES} ${Interfaces_FILES} ${Modules_FILES}
-  ${Modules_LAPACK_FILES} ${Modules_ARPACK_FILES}
-)
-add_library(MODULES OBJECT ${MODULES_ALL_FILES})
-
-# collect modules
-list(APPEND modules_names ARPACK LK1 LK2 LK3 LK4 LK5 LK6 LK9 EMG)
-foreach (modname IN LISTS modules_names)
-  file(GLOB_RECURSE TMP_MOD_FILES "${CMAKE_SOURCE_DIR}/${modname}/*.f*")
-  add_library(${modname} OBJECT ${TMP_MOD_FILES} ${TMP_MOD_FILES_PP})
-  target_link_libraries(${modname} MODULES)
-endforeach()
-
-# add the DGSSV C module from SuperLU and link it against SuperLU's BLAS
-add_library(dgssv "${SUPERLU_DIR}/FORTRAN/c_fortran_dgssv.c")
-target_link_libraries(dgssv blas)
-
-# if (and only if) SuperLU is compiled with its internal CBLAS, some subrs will
-# be missing, so we compile our own.
-# first, we check for the missing subroutines
-list(
-  APPEND blas_fns dgemm dgemv dlamch dlanst dscal dsteqr dsterf dswap dtrsm
-  dtrtri ilaenv lsame xerbla
-)
-foreach (fname IN LISTS blas_fns)
-  check_function_exists(${fname} BLAS_FN_EXISTS)
-  if (NOT BLAS_FN_EXISTS)
-    string(TOUPPER ${fname} fname_upper)
-    list(APPEND missing_blas_src "${CMAKE_SOURCE_DIR}/BLAS/${fname_upper}.f")
-    list(APPEND missing_blas_fns ${fname})
-  endif()
-endforeach()
-# if any subroutines have bene found, create an inner blas library
-list(LENGTH missing_blas_fns MISSING_FNS_TOTAL)
-if (MISSING_FNS_TOTAL GREATER 0)
-  if (MISSING_FNS_TOTAL GREATER 1)
-    message(
-      STATUS
-      "BLAS subrs (${missing_blas_fns}) are absent and will be built locally."
-    )
-  else()
-    message(
-      STATUS
-      "BLAS subr ${missing_blas_fns} is absent and will be built locally."
-    )
-  endif()
-  add_library(my_blas OBJECT ${missing_blas_src})
-  target_link_libraries(my_blas MODULES)
-endif()
-
-# prepare the main executable, linked against the specifics and the m
-# it appears utils used to be a module, but that is no longer the case?
-file(GLOB_RECURSE UTIL_FILES "${CMAKE_SOURCE_DIR}/UTIL/*.f*")
-file(GLOB_RECURSE MAIN_FILES "${CMAKE_SOURCE_DIR}/MAIN/*.[fF]*")
-add_executable(mystran ${MAIN_FILES} ${MODULES_ALL_FILES} ${UTIL_FILES})
-target_link_libraries(mystran ${modules_names})
-target_link_libraries(mystran dgssv superlu f2c blas)
-if (MISSING_FNS_TOTAL GREATER 0)
-  target_link_libraries(mystran my_blas)
-endif()
-set_target_properties(
-  mystran PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}
-)
-if (CMAKE_COMPILER_IS_GNUCC)
-  target_compile_options(
-    mystran PRIVATE
-    -Wall -Wextra
-    -Wno-unused-variable -Wno-unused-label -Wno-unused-parameter -Wno-tabs
-    -Wno-compare-reals -Wno-character-truncation -Wno-unused-dummy-argument
-    -Wmaybe-uninitialized -Wrealloc-lhs -fcheck=all
-  )
-endif()
-
-# issue a couple messages about compilation
-include(ProcessorCount)
-ProcessorCount(NCPU)
-message(STATUS "You can now compile MYSTRAN with ${RECOMMENDED_MAKE}.")
-if (NOT NCPU EQUAL 0)
-  message(STATUS "Compile faster by passing -j${NCPU} to ${RECOMMENDED_MAKE}.")
-endif()
+file(GLOB_RECURSE MAIN_FILES "Source/MAIN/*.f90")
+add_executable(bjMystran ${MAIN_FILES} ${USE_IFs_FILES} ${Interfaces_FILES} ${Modules_FILES} ${Modules_LAPACK_FILES} ${Modules_ARPACK_FILES} ${UTIL_FILES})
+if (BUILD_WITH_LAPACK3)
+    target_link_libraries (bjMystran bjARPACK bjLK1 bjLK2 bjLK3 bjLK4 bjLK5 bjLK6 bjLK9 bjEMG bjSuperLU blas)
+else (BUILD_WITH_LAPACK3)
+    target_link_libraries (bjMystran bjARPACK bjLK1 bjLK2 bjLK3 bjLK4 bjLK5 bjLK6 bjLK9 bjEMG bjSuperLU)
+endif (BUILD_WITH_LAPACK3)

@@ -3,7 +3,7 @@
 # 20250110
 # by ceanwang@gmail.com
 
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required (VERSION 3.2)
 project (bjMystran)
 enable_language(Fortran)
 
@@ -20,12 +20,6 @@ link_directories("lib")
 
 include_directories("Source/INCLUDE" "superlu/SRC" "superlu/CBLAS" "lapack-3.11.0/LAPACKE/include")
 
-if (BUILD_WITH_LAPACK3)
-	#file(GLOB_RECURSE BLAS_FILES "lapack-3.11.0/BLAS/SRC/*.f*")
-	#add_library(bjBLAS ${BLAS_FILES})
-    add_subdirectory(lapack-3.11.0)
-endif (BUILD_WITH_LAPACK3)
-
 if (BUILD_WITH_SUPERLU)
 	file(GLOB_RECURSE CBLAS_FILES "superlu/CBLAS/*.c")
 	add_library(bjCBLAS ${CBLAS_FILES})
@@ -37,9 +31,6 @@ if (BUILD_WITH_SUPERLU)
 endif (BUILD_WITH_SUPERLU)
 
 # get all *.f90 and *f files recursively
-file(GLOB_RECURSE BLAS_FILES "Source/BLAS/*.f")
-add_library(bjBLAS ${BLAS_FILES})
-
 file(GLOB_RECURSE Modules_ARPACK_FILES "Source/Modules/ARPACK/*.f")
 file(GLOB_RECURSE Modules_BANDIT_FILES "Source/Modules/BANDIT/*.f*")
 file(GLOB_RECURSE Modules_LAPACK_FILES "Source/Modules/LAPACK/*.f")
@@ -48,15 +39,23 @@ file(GLOB_RECURSE Interfaces_FILES "Source/Interfaces/*.f90")
 file(GLOB_RECURSE USE_IFs_FILES "Source/USE_IFs/*.f90")
 file(GLOB_RECURSE UTIL_FILES "Source/UTIL/*.f90")
 add_library(bjMOD ${USE_IFs_FILES} ${Modules_BANDIT_FILES} ${Interfaces_FILES} ${Modules_FILES} ${Modules_LAPACK_FILES} ${Modules_ARPACK_FILES} ${UTIL_FILES})
-target_link_libraries (bjMOD bjBLAS)
+
+if (BUILD_WITH_LAPACK3)
+	#file(GLOB_RECURSE BLAS_FILES "lapack-3.11.0/BLAS/SRC/*.f*")
+	#add_library(bjBLAS ${BLAS_FILES})
+    add_subdirectory(lapack-3.11.0)
+else (BUILD_WITH_LAPACK3)
+    file(GLOB_RECURSE BLAS_FILES "Source/BLAS/*.f")
+    add_library(blas ${BLAS_FILES})
+    target_link_libraries (blas bjMOD)
+endif (BUILD_WITH_LAPACK3)
 
 file(GLOB_RECURSE ARPACK_FILES "Source/ARPACK/*.f90")
 add_library(bjARPACK ${ARPACK_FILES})
 target_link_libraries (bjARPACK bjMOD)
 
-file(GLOB_RECURSE QUAD4REV1_FILES "Source/QUAD4REV1/*.f*")
 file(GLOB_RECURSE EMG_FILES "Source/EMG/*.f90")
-add_library(bjEMG ${QUAD4REV1_FILES} ${EMG_FILES})
+add_library(bjEMG ${EMG_FILES})
 if (BUILD_WITH_LAPACK3)
     target_link_libraries (bjEMG blas bjMOD)
 else (BUILD_WITH_LAPACK3)

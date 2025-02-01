@@ -5,3 +5,9 @@ How to build under Windows 10:
 3. Keyin make to build
 
 See screenshow at https://github.com/ceanwang/MYSTRAN/discussions/2
+
+To build with Nijia:
+
+1. Open a DOS terminal
+2. Run n.bat
+3. Keyin ninja to build

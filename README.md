@@ -11,3 +11,5 @@ To build with Ninja:
 1. Open a DOS terminal
 2. Run n.bat
 3. Keyin ninja to build
+
+See screenshow at https://github.com/ceanwang/MYSTRAN/discussions/3

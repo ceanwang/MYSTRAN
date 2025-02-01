@@ -6,7 +6,7 @@ How to build under Windows 10:
 
 See screenshow at https://github.com/ceanwang/MYSTRAN/discussions/2
 
-To build with Nijia:
+To build with Ninja:
 
 1. Open a DOS terminal
 2. Run n.bat
